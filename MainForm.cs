@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net;
 using System.Text;
 using Markdig;
 using ScintillaNET;
@@ -69,6 +70,7 @@ public class MainForm : Form
         viewMenu.DropDownItems.Add(MenuItem("&Markdown Preview", Keys.Control | Keys.Shift | Keys.V, (_, _) => ToggleMarkdownPreview()));
 
         var toolsMenu = new ToolStripMenuItem("&Tools");
+        toolsMenu.DropDownItems.Add(MenuItem("Compile &Markdown", Keys.F7, (_, _) => CompileMarkdown()));
         toolsMenu.DropDownItems.Add(MenuItem("Compile &LaTeX", Keys.F6, async (_, _) => await CompileLatex()));
         toolsMenu.DropDownItems.Add(MenuItem("&Docker", Keys.Control | Keys.Shift | Keys.D, async (_, _) => await ShowDocker()));
 
@@ -365,20 +367,54 @@ public class MainForm : Form
     private static void RenderMarkdown(TabState state)
     {
         if (state.Preview == null) return;
-        string body;
-        try { body = Markdown.ToHtml(state.Editor.Text, MdPipeline); }
-        catch (Exception ex) { body = "<pre>render error: " + ex.Message + "</pre>"; }
 
-        state.Preview.DocumentText =
+        state.Preview.DocumentText = BuildMarkdownHtmlDocument(state.Editor.Text, state.FilePath);
+    }
+
+    private static string BuildMarkdownHtmlDocument(string markdown, string? title)
+    {
+        string body;
+        try { body = Markdown.ToHtml(markdown, MdPipeline); }
+        catch (Exception ex) { body = "<pre>render error: " + WebUtility.HtmlEncode(ex.Message) + "</pre>"; }
+
+        var safeTitle = WebUtility.HtmlEncode(title != null ? Path.GetFileName(title) : "Markdown output");
+        return
             "<!DOCTYPE html><html><head><meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"><style>" +
-            "body{font-family:'Segoe UI',sans-serif;font-size:14px;line-height:1.6;color:#1f2328;max-width:860px;margin:0 auto;padding:16px 24px;}" +
-            "h1,h2{border-bottom:1px solid #d8dee4;padding-bottom:6px;}" +
-            "code{background:#f0f1f2;padding:2px 5px;border-radius:4px;font-family:'Cascadia Mono',Consolas,monospace;font-size:13px;}" +
-            "pre{background:#f6f8fa;padding:12px;border-radius:6px;overflow-x:auto;}pre code{background:none;padding:0;}" +
-            "blockquote{border-left:4px solid #d8dee4;margin-left:0;padding-left:14px;color:#59636e;}" +
-            "table{border-collapse:collapse;}th,td{border:1px solid #d8dee4;padding:5px 12px;}" +
-            "img{max-width:100%;}a{color:#0969da;}" +
-            "</style></head><body>" + body + "</body></html>";
+            "body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;font-size:16px;line-height:1.65;color:#1f2328;max-width:900px;margin:0 auto;padding:32px 40px;background:#fff;}" +
+            "h1,h2{border-bottom:1px solid #d8dee4;padding-bottom:.3em;}h1{font-size:2em;}h2{font-size:1.45em;margin-top:1.8em;}h3{font-size:1.2em;margin-top:1.5em;}" +
+            "p,ul,ol,blockquote,pre,table{margin:0 0 1em;}ul,ol{padding-left:1.6em;}li+li{margin-top:.25em;}" +
+            "code{background:#f0f1f2;padding:.15em .35em;border-radius:4px;font-family:'Cascadia Mono',Consolas,monospace;font-size:.9em;}" +
+            "pre{background:#f6f8fa;padding:16px;border-radius:6px;overflow-x:auto;}pre code{background:none;padding:0;font-size:.9em;}" +
+            "blockquote{border-left:4px solid #d8dee4;padding-left:16px;color:#59636e;}" +
+            "table{border-collapse:collapse;display:block;overflow-x:auto;}th,td{border:1px solid #d8dee4;padding:6px 12px;}th{background:#f6f8fa;}" +
+            "img{max-width:100%;height:auto;}a{color:#0969da;}hr{border:0;border-top:1px solid #d8dee4;margin:24px 0;}" +
+            "</style><title>" + safeTitle + "</title></head><body>" + body + "</body></html>";
+    }
+
+    private void CompileMarkdown()
+    {
+        var page = _tabs.SelectedTab;
+        if (page == null || State(page) is not { } state || state.FilePath == null ||
+            !state.Language.StartsWith("Markdown", StringComparison.OrdinalIgnoreCase))
+        {
+            _statusPath.Text = "Compile Markdown needs a saved .md file in the active tab";
+            return;
+        }
+        if (state.IsDirty && !SaveTab(page)) return;
+
+        var outputPath = Path.ChangeExtension(state.FilePath, ".html");
+        try
+        {
+            var html = BuildMarkdownHtmlDocument(state.Editor.Text, state.FilePath);
+            File.WriteAllText(outputPath, html, new UTF8Encoding(false));
+            _statusPath.Text = $"Compiled Markdown -> {outputPath}";
+            Process.Start(new ProcessStartInfo(outputPath) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, $"Could not compile Markdown:\n{ex.Message}", "codeviewer",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
     // ---------- latex ----------
