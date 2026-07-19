@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Text;
 using Markdig;
 using ScintillaNET;
@@ -15,18 +16,22 @@ public class MainForm : Form
 
     private readonly SplitContainer _split;
     private readonly TreeView _tree;
-    private readonly TabControl _tabs;
+    private readonly ThemedTabControl _tabs;
+    private readonly StatusStrip _status;
     private readonly ToolStripStatusLabel _statusPath;
     private readonly ToolStripStatusLabel _statusLang;
     private readonly ToolStripStatusLabel _statusPos;
     private readonly ToolStripMenuItem _wordWrapMenu;
     private readonly ToolStripMenuItem _sidebarMenu;
+    private readonly ToolStripMenuItem _lightModeMenu;
     private TabPage? _dockerPage;
+    private Theme _theme = Theme.Load();
 
     private sealed class TabState
     {
         public Scintilla Editor = null!;
         public string? FilePath;
+        public string? HighlightPath;
         public bool IsDirty;
         public Encoding Encoding = new UTF8Encoding(false);
         public string Language = "Plain text";
@@ -64,8 +69,16 @@ public class MainForm : Form
         };
         _sidebarMenu = new ToolStripMenuItem("Folder &Sidebar") { CheckOnClick = true, Checked = true };
         _sidebarMenu.Click += (_, _) => _split!.Panel1Collapsed = !_sidebarMenu.Checked;
+        _lightModeMenu = new ToolStripMenuItem("&Light Mode") { CheckOnClick = true, Checked = !_theme.IsDark };
+        _lightModeMenu.Click += (_, _) =>
+        {
+            _theme = _lightModeMenu.Checked ? Theme.Light : Theme.Dark;
+            Theme.Save(_theme);
+            ApplyTheme();
+        };
         viewMenu.DropDownItems.Add(_wordWrapMenu);
         viewMenu.DropDownItems.Add(_sidebarMenu);
+        viewMenu.DropDownItems.Add(_lightModeMenu);
         viewMenu.DropDownItems.Add(new ToolStripSeparator());
         viewMenu.DropDownItems.Add(MenuItem("&Markdown Preview", Keys.Control | Keys.Shift | Keys.V, (_, _) => ToggleMarkdownPreview()));
 
@@ -80,11 +93,11 @@ public class MainForm : Form
         MainMenuStrip = menu;
 
         // status bar
-        var status = new StatusStrip();
+        _status = new StatusStrip { SizingGrip = false };
         _statusPath = new ToolStripStatusLabel("Ready") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
         _statusLang = new ToolStripStatusLabel("");
         _statusPos = new ToolStripStatusLabel("");
-        status.Items.AddRange(new ToolStripItem[] { _statusPath, _statusLang, _statusPos });
+        _status.Items.AddRange(new ToolStripItem[] { _statusPath, _statusLang, _statusPos });
 
         // sidebar tree + editor tabs
         _tree = new TreeView
@@ -93,14 +106,20 @@ public class MainForm : Form
             BorderStyle = System.Windows.Forms.BorderStyle.None,
             ShowLines = false,
             Font = new Font("Segoe UI", 9f),
-            BackColor = Color.FromArgb(250, 250, 250),
         };
         _tree.BeforeExpand += Tree_BeforeExpand;
-        _tree.NodeMouseDoubleClick += (_, e) => { if (e.Node.Tag is string path && File.Exists(path)) OpenFile(path); };
+        _tree.NodeMouseDoubleClick += (_, e) => { if (e.Node?.Tag is string path && File.Exists(path)) OpenFile(path); };
 
-        _tabs = new TabControl { Dock = DockStyle.Fill };
+        _tabs = new ThemedTabControl
+        {
+            Dock = DockStyle.Fill,
+            DrawMode = System.Windows.Forms.TabDrawMode.OwnerDrawFixed,
+            Padding = new Point(12, 4),
+            StripBack = _theme.TabStripBack,
+        };
         _tabs.SelectedIndexChanged += (_, _) => UpdateStatus();
         _tabs.MouseDown += Tabs_MouseDown;
+        _tabs.DrawItem += Tabs_DrawItem;
 
         var tabContext = new ContextMenuStrip();
         tabContext.Items.Add("Close", null, (_, _) => { if (_tabs.SelectedTab != null) CloseTab(_tabs.SelectedTab); });
@@ -119,7 +138,7 @@ public class MainForm : Form
         _split.Panel2.Controls.Add(_tabs);
 
         Controls.Add(_split);
-        Controls.Add(status);
+        Controls.Add(_status);
         Controls.Add(menu);
         _split.BringToFront();
 
@@ -138,6 +157,9 @@ public class MainForm : Form
             Shown += (_, _) => ToggleMarkdownPreview();
         if (args.Contains("--docker"))
             Shown += async (_, _) => await ShowDocker();
+
+        Shown += (_, _) => ApplyNativeDarkMode(); // child handles exist by now
+        ApplyTheme();
     }
 
     private static ToolStripMenuItem MenuItem(string text, Keys keys, EventHandler onClick)
@@ -202,14 +224,14 @@ public class MainForm : Form
     {
         var editor = CreateEditor();
         state.Editor = editor;
+        state.HighlightPath = highlightPath;
         editor.Text = text;
         editor.EmptyUndoBuffer();
         editor.SetSavePoint();
-        state.Language = Languages.Apply(editor, highlightPath);
-        SetLineNumberWidth(editor);
+        state.Language = ApplyEditorTheme(editor, highlightPath);
 
         var page = new TabPage(title) { Tag = state, ToolTipText = state.FilePath ?? title };
-        var split = new SplitContainer { Dock = DockStyle.Fill, SplitterWidth = 4, Panel2Collapsed = true };
+        var split = new SplitContainer { Dock = DockStyle.Fill, SplitterWidth = 4, Panel2Collapsed = true, BackColor = _theme.EditorBack };
         split.Panel1.Controls.Add(editor);
         page.Controls.Add(split);
         WireEditor(editor, page);
@@ -240,23 +262,40 @@ public class MainForm : Form
             TabWidth = 4,
             UseTabs = false,
             CaretLineVisible = true,
-            CaretLineBackColor = Color.FromArgb(245, 247, 250),
             WrapMode = _wordWrapMenu.Checked ? WrapMode.Word : WrapMode.None,
             AllowDrop = true,
         };
 
-        editor.Styles[ScintillaNET.Style.Default].Font = "Cascadia Mono";
-        editor.Styles[ScintillaNET.Style.Default].Size = 10;
-        editor.StyleClearAll();
-        editor.Styles[ScintillaNET.Style.LineNumber].ForeColor = Color.FromArgb(140, 140, 140);
-        editor.Styles[ScintillaNET.Style.LineNumber].BackColor = Color.FromArgb(248, 248, 248);
         editor.Margins[0].Type = MarginType.Number;
         editor.Margins[1].Width = 4;
-        editor.SetSelectionBackColor(true, Color.FromArgb(173, 214, 255));
 
         editor.DragEnter += OnDragEnter;
         editor.DragDrop += OnDragDrop;
         return editor;
+    }
+
+    /// <summary>Applies the active theme's editor colors and syntax palette; re-runnable on theme toggle.</summary>
+    private string ApplyEditorTheme(Scintilla editor, string? highlightPath)
+    {
+        editor.Styles[ScintillaNET.Style.Default].Font = "Cascadia Mono";
+        editor.Styles[ScintillaNET.Style.Default].Size = 10;
+        editor.Styles[ScintillaNET.Style.Default].ForeColor = _theme.EditorFore;
+        editor.Styles[ScintillaNET.Style.Default].BackColor = _theme.EditorBack;
+        editor.StyleClearAll();
+
+        editor.Styles[ScintillaNET.Style.LineNumber].ForeColor = _theme.LineNumberFore;
+        editor.Styles[ScintillaNET.Style.LineNumber].BackColor = _theme.LineNumberBack;
+        editor.CaretLineBackColor = _theme.CaretLineBack;
+        editor.CaretForeColor = _theme.CaretFore;
+        editor.SetSelectionBackColor(true, _theme.SelectionBack);
+        editor.Styles[ScintillaNET.Style.IndentGuide].ForeColor = _theme.IndentGuideFore;
+        editor.Styles[ScintillaNET.Style.IndentGuide].BackColor = _theme.EditorBack;
+        editor.SetFoldMarginColor(true, _theme.EditorBack);
+        editor.SetFoldMarginHighlightColor(true, _theme.EditorBack);
+
+        var language = Languages.Apply(editor, highlightPath, _theme);
+        SetLineNumberWidth(editor);
+        return language;
     }
 
     private void WireEditor(Scintilla editor, TabPage page)
@@ -364,30 +403,39 @@ public class MainForm : Form
         RenderMarkdown(state);
     }
 
-    private static void RenderMarkdown(TabState state)
+    private void RenderMarkdown(TabState state)
     {
         if (state.Preview == null) return;
 
-        state.Preview.DocumentText = BuildMarkdownHtmlDocument(state.Editor.Text, state.FilePath);
+        state.Preview.DocumentText = BuildMarkdownHtmlDocument(state.Editor.Text, state.FilePath, _theme.IsDark);
     }
 
-    private static string BuildMarkdownHtmlDocument(string markdown, string? title)
+    private static string BuildMarkdownHtmlDocument(string markdown, string? title, bool dark)
     {
         string body;
         try { body = Markdown.ToHtml(markdown, MdPipeline); }
         catch (Exception ex) { body = "<pre>render error: " + WebUtility.HtmlEncode(ex.Message) + "</pre>"; }
 
         var safeTitle = WebUtility.HtmlEncode(title != null ? Path.GetFileName(title) : "Markdown output");
+        var style = dark
+            ? "body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;font-size:16px;line-height:1.65;color:#d4d4d4;max-width:900px;margin:0 auto;padding:32px 40px;background:#1e1e1e;}" +
+              "h1,h2{border-bottom:1px solid #3c3c3c;padding-bottom:.3em;}h1{font-size:2em;}h2{font-size:1.45em;margin-top:1.8em;}h3{font-size:1.2em;margin-top:1.5em;}" +
+              "p,ul,ol,blockquote,pre,table{margin:0 0 1em;}ul,ol{padding-left:1.6em;}li+li{margin-top:.25em;}" +
+              "code{background:#2d2d2d;padding:.15em .35em;border-radius:4px;font-family:'Cascadia Mono',Consolas,monospace;font-size:.9em;}" +
+              "pre{background:#252526;padding:16px;border-radius:6px;overflow-x:auto;}pre code{background:none;padding:0;font-size:.9em;}" +
+              "blockquote{border-left:4px solid #3c3c3c;padding-left:16px;color:#9d9d9d;}" +
+              "table{border-collapse:collapse;display:block;overflow-x:auto;}th,td{border:1px solid #3c3c3c;padding:6px 12px;}th{background:#252526;}" +
+              "img{max-width:100%;height:auto;}a{color:#4fc1ff;}hr{border:0;border-top:1px solid #3c3c3c;margin:24px 0;}"
+            : "body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;font-size:16px;line-height:1.65;color:#1f2328;max-width:900px;margin:0 auto;padding:32px 40px;background:#fff;}" +
+              "h1,h2{border-bottom:1px solid #d8dee4;padding-bottom:.3em;}h1{font-size:2em;}h2{font-size:1.45em;margin-top:1.8em;}h3{font-size:1.2em;margin-top:1.5em;}" +
+              "p,ul,ol,blockquote,pre,table{margin:0 0 1em;}ul,ol{padding-left:1.6em;}li+li{margin-top:.25em;}" +
+              "code{background:#f0f1f2;padding:.15em .35em;border-radius:4px;font-family:'Cascadia Mono',Consolas,monospace;font-size:.9em;}" +
+              "pre{background:#f6f8fa;padding:16px;border-radius:6px;overflow-x:auto;}pre code{background:none;padding:0;font-size:.9em;}" +
+              "blockquote{border-left:4px solid #d8dee4;padding-left:16px;color:#59636e;}" +
+              "table{border-collapse:collapse;display:block;overflow-x:auto;}th,td{border:1px solid #d8dee4;padding:6px 12px;}th{background:#f6f8fa;}" +
+              "img{max-width:100%;height:auto;}a{color:#0969da;}hr{border:0;border-top:1px solid #d8dee4;margin:24px 0;}";
         return
-            "<!DOCTYPE html><html><head><meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"><style>" +
-            "body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;font-size:16px;line-height:1.65;color:#1f2328;max-width:900px;margin:0 auto;padding:32px 40px;background:#fff;}" +
-            "h1,h2{border-bottom:1px solid #d8dee4;padding-bottom:.3em;}h1{font-size:2em;}h2{font-size:1.45em;margin-top:1.8em;}h3{font-size:1.2em;margin-top:1.5em;}" +
-            "p,ul,ol,blockquote,pre,table{margin:0 0 1em;}ul,ol{padding-left:1.6em;}li+li{margin-top:.25em;}" +
-            "code{background:#f0f1f2;padding:.15em .35em;border-radius:4px;font-family:'Cascadia Mono',Consolas,monospace;font-size:.9em;}" +
-            "pre{background:#f6f8fa;padding:16px;border-radius:6px;overflow-x:auto;}pre code{background:none;padding:0;font-size:.9em;}" +
-            "blockquote{border-left:4px solid #d8dee4;padding-left:16px;color:#59636e;}" +
-            "table{border-collapse:collapse;display:block;overflow-x:auto;}th,td{border:1px solid #d8dee4;padding:6px 12px;}th{background:#f6f8fa;}" +
-            "img{max-width:100%;height:auto;}a{color:#0969da;}hr{border:0;border-top:1px solid #d8dee4;margin:24px 0;}" +
+            "<!DOCTYPE html><html><head><meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"><style>" + style +
             "</style><title>" + safeTitle + "</title></head><body>" + body + "</body></html>";
     }
 
@@ -405,7 +453,8 @@ public class MainForm : Form
         var outputPath = Path.ChangeExtension(state.FilePath, ".html");
         try
         {
-            var html = BuildMarkdownHtmlDocument(state.Editor.Text, state.FilePath);
+            // standalone output always uses the light stylesheet, regardless of app theme
+            var html = BuildMarkdownHtmlDocument(state.Editor.Text, state.FilePath, dark: false);
             File.WriteAllText(outputPath, html, new UTF8Encoding(false));
             _statusPath.Text = $"Compiled Markdown -> {outputPath}";
             Process.Start(new ProcessStartInfo(outputPath) { UseShellExecute = true });
@@ -485,11 +534,13 @@ public class MainForm : Form
         if (_dockerPage == null || !_tabs.TabPages.Contains(_dockerPage))
         {
             var panel = new DockerPanel(OpenTextTab);
+            panel.ApplyTheme(_theme);
             _dockerPage = new TabPage("Docker");
             _dockerPage.Controls.Add(panel);
             _tabs.TabPages.Add(_dockerPage);
             _tabs.SelectedTab = _dockerPage;
             await panel.RefreshAsync();
+            panel.ApplyNativeTheme(_theme.IsDark);
         }
         else
         {
@@ -534,8 +585,9 @@ public class MainForm : Form
         if (dlg.ShowDialog(this) != DialogResult.OK) return false;
 
         state.FilePath = dlg.FileName;
+        state.HighlightPath = dlg.FileName;
         page.ToolTipText = dlg.FileName;
-        state.Language = Languages.Apply(state.Editor, dlg.FileName);
+        state.Language = Languages.Apply(state.Editor, dlg.FileName, _theme);
         if (!SaveTab(page)) return false;
         page.Text = Path.GetFileName(dlg.FileName);
         UpdateStatus();
@@ -665,5 +717,124 @@ public class MainForm : Form
         using var dlg = new FolderBrowserDialog();
         if (dlg.ShowDialog(this) == DialogResult.OK)
             OpenFolder(dlg.SelectedPath);
+    }
+
+    // ---------- theming ----------
+
+    private void ApplyTheme()
+    {
+        BackColor = _theme.PanelBack;
+        ToolStripManager.Renderer = new ThemeRenderer(new ThemeColorTable(_theme), _theme);
+        if (MainMenuStrip != null) MainMenuStrip.BackColor = _theme.MenuBack;
+        // explicit colors: the professional renderer skips its gradient once BackColor
+        // is non-default, and the ambient form BackColor already makes it non-default
+        _status.BackColor = _theme.StatusBack;
+        _status.ForeColor = _theme.StatusFore;
+
+        _tree.BackColor = _theme.SidebarBack;
+        _tree.ForeColor = _theme.SidebarFore;
+        _split.BackColor = _theme.TabStripBack;
+        _split.Panel1.BackColor = _theme.SidebarBack;
+        _split.Panel2.BackColor = _theme.TabStripBack;
+        _tabs.BackColor = _theme.TabStripBack;
+        _tabs.StripBack = _theme.TabStripBack;
+
+        foreach (TabPage page in _tabs.TabPages)
+        {
+            if (State(page) is { } state)
+            {
+                if (page.Controls.Count > 0 && page.Controls[0] is SplitContainer tabSplit)
+                    tabSplit.BackColor = _theme.EditorBack;
+                state.Language = ApplyEditorTheme(state.Editor, state.HighlightPath);
+                RenderMarkdown(state);
+            }
+            else if (page == _dockerPage && page.Controls.Count > 0 && page.Controls[0] is DockerPanel dockerPanel)
+            {
+                dockerPanel.ApplyTheme(_theme);
+            }
+        }
+        _tabs.Invalidate();
+        UpdateStatus();
+
+        ApplyNativeDarkMode();
+    }
+
+    private void Tabs_DrawItem(object? sender, DrawItemEventArgs e)
+    {
+        var page = _tabs.TabPages[e.Index];
+        bool selected = e.Index == _tabs.SelectedIndex;
+        var back = selected ? _theme.TabActiveBack : _theme.TabInactiveBack;
+        var fore = selected ? _theme.TabActiveFore : _theme.TabInactiveFore;
+
+        using var backBrush = new SolidBrush(back);
+        e.Graphics.FillRectangle(backBrush, e.Bounds);
+        TextRenderer.DrawText(e.Graphics, page.Text, _tabs.Font, e.Bounds, fore,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+    }
+
+    /// <summary>TabControl that repaints the native header strip and pane border, which ignore BackColor.</summary>
+    private sealed class ThemedTabControl : TabControl
+    {
+        public Color StripBack = SystemColors.Control;
+
+        protected override void WndProc(ref Message m)
+        {
+            base.WndProc(ref m);
+            if (m.Msg == 0x000F) PaintChrome(); // WM_PAINT
+        }
+
+        private void PaintChrome()
+        {
+            if (!IsHandleCreated || IsDisposed) return;
+            using var g = Graphics.FromHwnd(Handle);
+            using var region = new Region(ClientRectangle);
+            region.Exclude(DisplayRectangle);
+            for (int i = 0; i < TabCount; i++) region.Exclude(GetTabRect(i));
+            using var brush = new SolidBrush(StripBack);
+            g.FillRegion(brush, region);
+        }
+    }
+
+    // ---------- native dark chrome (best effort) ----------
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+    [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+    private static extern int SetWindowTheme(IntPtr hWnd, string? pszSubAppName, string? pszSubIdList);
+
+    private const int DwmwaUseImmersiveDarkMode = 20;
+
+    /// <summary>Applies dark scrollbars/list chrome to a control's handle; safe to call anywhere, never throws.</summary>
+    internal static void ApplyDarkScrollbars(IntPtr handle, bool dark)
+    {
+        try { SetWindowTheme(handle, dark ? "DarkMode_Explorer" : "Explorer", null); } catch { }
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        ApplyNativeDarkMode();
+    }
+
+    private void ApplyNativeDarkMode()
+    {
+        if (!IsHandleCreated) return;
+
+        try
+        {
+            int useDark = _theme.IsDark ? 1 : 0;
+            DwmSetWindowAttribute(Handle, DwmwaUseImmersiveDarkMode, ref useDark, sizeof(int));
+        }
+        catch { }
+
+        if (_tree.IsHandleCreated) ApplyDarkScrollbars(_tree.Handle, _theme.IsDark);
+        foreach (TabPage page in _tabs.TabPages)
+        {
+            if (State(page) is { } s && s.Editor.IsHandleCreated)
+                ApplyDarkScrollbars(s.Editor.Handle, _theme.IsDark);
+            else if (page == _dockerPage && page.Controls.Count > 0 && page.Controls[0] is DockerPanel dockerPanel)
+                dockerPanel.ApplyNativeTheme(_theme.IsDark);
+        }
     }
 }

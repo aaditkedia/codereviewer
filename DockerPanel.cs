@@ -9,18 +9,23 @@ public sealed class DockerPanel : UserControl
     private readonly ListView _images;
     private readonly Label _status;
     private readonly Action<string, string, string?> _openTab; // (title, content, fakeFileNameForHighlighting)
+    private readonly FlowLayoutPanel _toolbar;
+    private readonly Button _refreshBtn;
+    private readonly Label _headerContainers;
+    private readonly Label _headerImages;
+    private readonly SplitContainer _split;
 
     public DockerPanel(Action<string, string, string?> openTab)
     {
         _openTab = openTab;
         Dock = DockStyle.Fill;
 
-        var toolbar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 34, Padding = new Padding(4, 4, 0, 0) };
-        var refreshBtn = new Button { Text = "Refresh", AutoSize = true };
-        refreshBtn.Click += async (_, _) => await RefreshAsync();
+        _toolbar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 34, Padding = new Padding(4, 4, 0, 0) };
+        _refreshBtn = new Button { Text = "Refresh", AutoSize = true };
+        _refreshBtn.Click += async (_, _) => await RefreshAsync();
         _status = new Label { AutoSize = true, Padding = new Padding(8, 6, 0, 0), ForeColor = Color.DimGray };
-        toolbar.Controls.Add(refreshBtn);
-        toolbar.Controls.Add(_status);
+        _toolbar.Controls.Add(_refreshBtn);
+        _toolbar.Controls.Add(_status);
 
         _containers = MakeList(new[] { "ID", "Image", "Name", "Status", "Ports" }, new[] { 110, 200, 160, 180, 180 });
         _images = MakeList(new[] { "Repository", "Tag", "ID", "Size", "Created" }, new[] { 260, 120, 110, 100, 160 });
@@ -39,15 +44,62 @@ public sealed class DockerPanel : UserControl
         _images.ContextMenuStrip = imagesMenu;
         _images.DoubleClick += async (_, _) => await ImageInspect();
 
-        var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterWidth = 4 };
-        split.Panel1.Controls.Add(_containers);
-        split.Panel1.Controls.Add(Header("Containers"));
-        split.Panel2.Controls.Add(_images);
-        split.Panel2.Controls.Add(Header("Images"));
+        _headerContainers = Header("Containers");
+        _headerImages = Header("Images");
 
-        Controls.Add(split);
-        Controls.Add(toolbar);
-        split.BringToFront();
+        _split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterWidth = 4 };
+        _split.Panel1.Controls.Add(_containers);
+        _split.Panel1.Controls.Add(_headerContainers);
+        _split.Panel2.Controls.Add(_images);
+        _split.Panel2.Controls.Add(_headerImages);
+
+        Controls.Add(_split);
+        Controls.Add(_toolbar);
+        _split.BringToFront();
+    }
+
+    internal void ApplyTheme(Theme t)
+    {
+        BackColor = t.PanelBack;
+        _toolbar.BackColor = t.PanelBack;
+        _status.ForeColor = t.IsDark ? Color.FromArgb(0x9D, 0x9D, 0x9D) : Color.DimGray;
+        _split.BackColor = t.PanelBack;
+        _split.Panel1.BackColor = t.PanelBack;
+        _split.Panel2.BackColor = t.PanelBack;
+
+        foreach (var list in new[] { _containers, _images })
+        {
+            list.BackColor = t.ListBack;
+            list.ForeColor = t.ListFore;
+        }
+        ApplyNativeTheme(t.IsDark);
+
+        foreach (var header in new[] { _headerContainers, _headerImages })
+        {
+            header.BackColor = t.HeaderBack;
+            header.ForeColor = t.HeaderFore;
+        }
+
+        if (t.IsDark)
+        {
+            _refreshBtn.FlatStyle = FlatStyle.Flat;
+            _refreshBtn.BackColor = t.MenuBack;
+            _refreshBtn.ForeColor = t.MenuFore;
+            _refreshBtn.FlatAppearance.BorderColor = t.MenuBorder;
+        }
+        else
+        {
+            _refreshBtn.FlatStyle = FlatStyle.Standard;
+            _refreshBtn.UseVisualStyleBackColor = true;
+            _refreshBtn.ForeColor = t.PanelFore;
+        }
+    }
+
+    /// <summary>Applies dark-mode scrollbars to the ListViews; safe to call before/after their handles exist.</summary>
+    public void ApplyNativeTheme(bool dark)
+    {
+        if (_containers.IsHandleCreated) MainForm.ApplyDarkScrollbars(_containers.Handle, dark);
+        if (_images.IsHandleCreated) MainForm.ApplyDarkScrollbars(_images.Handle, dark);
     }
 
     public async Task RefreshAsync()
