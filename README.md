@@ -20,6 +20,7 @@ bin\Release\net10.0-windows\codeviewer.exe [files or folders...]
 ## Features
 
 - Syntax coloring: TS/JS/JSX, Python, Java, C#, C/C++, Go, Rust, PHP, Kotlin, SQL, HTML/CSS, JSON, YAML, XML, Markdown, LaTeX/BibTeX, shell/bash, PowerShell, Dockerfile, Terraform, batch, ini/env/toml, Makefile, proto
+- **Dark mode by default** with VS Code Dark+-style syntax colors; View > Light Mode toggles the light theme. Choice persists across runs (`%APPDATA%\codeviewer\settings.txt`).
 - **Markdown preview**: View > Markdown Preview (Ctrl+Shift+V) renders the file side by side, live as you type. `codeviewer --preview notes.md` opens with the preview already on.
 - **Markdown compile**: Tools > Compile Markdown (F7) saves the active `.md` file, writes a clean standalone `.html` file next to it, and opens it in your browser.
 - **LaTeX compile**: Tools > Compile LaTeX (F6) runs pdflatex / xelatex / tectonic (whichever is installed) on the active .tex file and opens the PDF. Compile errors open in a tab.

@@ -2,163 +2,192 @@ using ScintillaNET;
 
 namespace CodeViewer;
 
-/// <summary>Maps file extensions to Scintilla lexers, keywords, and a VS-light color scheme.</summary>
+/// <summary>Semantic syntax-highlighting tokens; each maps to a color in the active theme's palette.</summary>
+enum Tok { Default, Comment, Keyword, Type, Str, Num, Preproc, Err, Property, Tag, Attr, Regex, Muted }
+
+/// <summary>Maps file extensions to Scintilla lexers, keywords, and dark/light color palettes.</summary>
 static class Languages
 {
-    private sealed record StyleRule(int[] Ids, int Rgb, bool Bold = false, bool Italic = false);
+    private sealed record StyleRule(int[] Ids, Tok Token, bool Bold = false, bool Italic = false);
     private sealed record Lang(string Lexer, string Display, string? Kw0 = null, string? Kw1 = null);
 
-    // palette
-    private const int Comment = 0x008000;
-    private const int Keyword = 0x0000FF;
-    private const int TypeCol = 0x2B91AF;
-    private const int Str = 0xA31515;
-    private const int Num = 0x098658;
-    private const int Preproc = 0xAF00DB;
-    private const int ErrCol = 0xCD0000;
+    // palettes: raw RGB per semantic token, light (VS-light) and dark (VS Code Dark+)
+    private static readonly Dictionary<Tok, int> LightPalette = new()
+    {
+        [Tok.Default] = 0x000000,
+        [Tok.Comment] = 0x008000,
+        [Tok.Keyword] = 0x0000FF,
+        [Tok.Type] = 0x2B91AF,
+        [Tok.Str] = 0xA31515,
+        [Tok.Num] = 0x098658,
+        [Tok.Preproc] = 0xAF00DB,
+        [Tok.Err] = 0xCD0000,
+        [Tok.Property] = 0x0451A5,
+        [Tok.Tag] = 0x800000,
+        [Tok.Attr] = 0xE50000,
+        [Tok.Regex] = 0x811F3F,
+        [Tok.Muted] = 0x808080,
+    };
+
+    private static readonly Dictionary<Tok, int> DarkPalette = new()
+    {
+        [Tok.Default] = 0xD4D4D4,
+        [Tok.Comment] = 0x6A9955,
+        [Tok.Keyword] = 0x569CD6,
+        [Tok.Type] = 0x4EC9B0,
+        [Tok.Str] = 0xCE9178,
+        [Tok.Num] = 0xB5CEA8,
+        [Tok.Preproc] = 0xC586C0,
+        [Tok.Err] = 0xF44747,
+        [Tok.Property] = 0x9CDCFE,
+        [Tok.Tag] = 0x569CD6,
+        [Tok.Attr] = 0x9CDCFE,
+        [Tok.Regex] = 0xD16969,
+        [Tok.Muted] = 0x6E7681,
+    };
 
     // per-lexer style tables (raw SCE_* style numbers, uniform across ScintillaNET versions)
     private static readonly Dictionary<string, StyleRule[]> LexerStyles = new()
     {
         ["cpp"] = new[]
         {
-            new StyleRule(new[] { 1, 2, 3, 15, 17, 18 }, Comment),
-            new StyleRule(new[] { 4 }, Num),
-            new StyleRule(new[] { 5 }, Keyword, Bold: true),
-            new StyleRule(new[] { 6, 7, 12, 13, 20 }, Str),
-            new StyleRule(new[] { 14 }, 0x811F3F),          // regex
-            new StyleRule(new[] { 9 }, Preproc),
-            new StyleRule(new[] { 16, 19 }, TypeCol),       // word2, globalclass
+            new StyleRule(new[] { 1, 2, 3, 15, 17, 18 }, Tok.Comment),
+            new StyleRule(new[] { 4 }, Tok.Num),
+            new StyleRule(new[] { 5 }, Tok.Keyword, Bold: true),
+            new StyleRule(new[] { 6, 7, 12, 13, 20 }, Tok.Str),
+            new StyleRule(new[] { 14 }, Tok.Regex),
+            new StyleRule(new[] { 9 }, Tok.Preproc),
+            new StyleRule(new[] { 16, 19 }, Tok.Type),       // word2, globalclass
         },
         ["python"] = new[]
         {
-            new StyleRule(new[] { 1, 12 }, Comment),
-            new StyleRule(new[] { 2 }, Num),
-            new StyleRule(new[] { 3, 4, 6, 7, 13, 16, 17, 18, 19 }, Str),
-            new StyleRule(new[] { 5 }, Keyword, Bold: true),
-            new StyleRule(new[] { 8 }, TypeCol, Bold: true), // class name
-            new StyleRule(new[] { 9 }, TypeCol),             // def name
-            new StyleRule(new[] { 14 }, Keyword),            // word2
-            new StyleRule(new[] { 15 }, Preproc),            // decorator
+            new StyleRule(new[] { 1, 12 }, Tok.Comment),
+            new StyleRule(new[] { 2 }, Tok.Num),
+            new StyleRule(new[] { 3, 4, 6, 7, 13, 16, 17, 18, 19 }, Tok.Str),
+            new StyleRule(new[] { 5 }, Tok.Keyword, Bold: true),
+            new StyleRule(new[] { 8 }, Tok.Type, Bold: true), // class name
+            new StyleRule(new[] { 9 }, Tok.Type),             // def name
+            new StyleRule(new[] { 14 }, Tok.Keyword),         // word2
+            new StyleRule(new[] { 15 }, Tok.Preproc),         // decorator
         },
         ["json"] = new[]
         {
-            new StyleRule(new[] { 1 }, Num),
-            new StyleRule(new[] { 2 }, Str),
-            new StyleRule(new[] { 4 }, 0x0451A5),            // property name
-            new StyleRule(new[] { 5 }, Preproc),             // escape sequence
-            new StyleRule(new[] { 6, 7 }, Comment),
-            new StyleRule(new[] { 11, 12 }, Keyword, Bold: true),
-            new StyleRule(new[] { 13 }, ErrCol),
+            new StyleRule(new[] { 1 }, Tok.Num),
+            new StyleRule(new[] { 2 }, Tok.Str),
+            new StyleRule(new[] { 4 }, Tok.Property),         // property name
+            new StyleRule(new[] { 5 }, Tok.Preproc),          // escape sequence
+            new StyleRule(new[] { 6, 7 }, Tok.Comment),
+            new StyleRule(new[] { 11, 12 }, Tok.Keyword, Bold: true),
+            new StyleRule(new[] { 13 }, Tok.Err),
         },
         ["yaml"] = new[]
         {
-            new StyleRule(new[] { 1 }, Comment),
-            new StyleRule(new[] { 2 }, 0x0451A5),            // key / identifier
-            new StyleRule(new[] { 3 }, Keyword, Bold: true), // true/false/null
-            new StyleRule(new[] { 4 }, Num),
-            new StyleRule(new[] { 5, 6 }, Preproc),          // &anchor, --- document
-            new StyleRule(new[] { 8 }, ErrCol),
+            new StyleRule(new[] { 1 }, Tok.Comment),
+            new StyleRule(new[] { 2 }, Tok.Property),         // key / identifier
+            new StyleRule(new[] { 3 }, Tok.Keyword, Bold: true), // true/false/null
+            new StyleRule(new[] { 4 }, Tok.Num),
+            new StyleRule(new[] { 5, 6 }, Tok.Preproc),       // &anchor, --- document
+            new StyleRule(new[] { 8 }, Tok.Err),
         },
         ["xml"] = new[]
         {
-            new StyleRule(new[] { 1, 2 }, 0x800000),         // tags
-            new StyleRule(new[] { 3, 4 }, 0xE50000),         // attributes
-            new StyleRule(new[] { 5 }, Num),
-            new StyleRule(new[] { 6, 7 }, Keyword),          // attribute values
-            new StyleRule(new[] { 9 }, Comment),
-            new StyleRule(new[] { 10 }, Preproc),            // entity
-            new StyleRule(new[] { 17 }, 0x808080),           // cdata
+            new StyleRule(new[] { 1, 2 }, Tok.Tag),
+            new StyleRule(new[] { 3, 4 }, Tok.Attr),
+            new StyleRule(new[] { 5 }, Tok.Num),
+            new StyleRule(new[] { 6, 7 }, Tok.Keyword),       // attribute values
+            new StyleRule(new[] { 9 }, Tok.Comment),
+            new StyleRule(new[] { 10 }, Tok.Preproc),         // entity
+            new StyleRule(new[] { 17 }, Tok.Muted),           // cdata
         },
         ["hypertext"] = new[]
         {
-            new StyleRule(new[] { 1, 2 }, 0x800000),
-            new StyleRule(new[] { 3, 4 }, 0xE50000),
-            new StyleRule(new[] { 5 }, Num),
-            new StyleRule(new[] { 6, 7 }, Keyword),
-            new StyleRule(new[] { 9 }, Comment),
-            new StyleRule(new[] { 10 }, Preproc),
-            new StyleRule(new[] { 17 }, 0x808080),
+            new StyleRule(new[] { 1, 2 }, Tok.Tag),
+            new StyleRule(new[] { 3, 4 }, Tok.Attr),
+            new StyleRule(new[] { 5 }, Tok.Num),
+            new StyleRule(new[] { 6, 7 }, Tok.Keyword),
+            new StyleRule(new[] { 9 }, Tok.Comment),
+            new StyleRule(new[] { 10 }, Tok.Preproc),
+            new StyleRule(new[] { 17 }, Tok.Muted),
         },
         ["css"] = new[]
         {
-            new StyleRule(new[] { 9 }, Comment),
-            new StyleRule(new[] { 1 }, 0x800000),            // tag selector
-            new StyleRule(new[] { 2, 10 }, TypeCol),         // .class, #id
-            new StyleRule(new[] { 3, 4, 12 }, Preproc),      // :pseudo, @directive
-            new StyleRule(new[] { 6, 7, 15 }, 0x0451A5),     // property names
-            new StyleRule(new[] { 8 }, Str),                 // values
-            new StyleRule(new[] { 13, 14 }, Str),
-            new StyleRule(new[] { 11 }, ErrCol),             // !important
+            new StyleRule(new[] { 9 }, Tok.Comment),
+            new StyleRule(new[] { 1 }, Tok.Tag),              // tag selector
+            new StyleRule(new[] { 2, 10 }, Tok.Type),         // .class, #id
+            new StyleRule(new[] { 3, 4, 12 }, Tok.Preproc),   // :pseudo, @directive
+            new StyleRule(new[] { 6, 7, 15 }, Tok.Property),  // property names
+            new StyleRule(new[] { 8 }, Tok.Str),              // values
+            new StyleRule(new[] { 13, 14 }, Tok.Str),
+            new StyleRule(new[] { 11 }, Tok.Err),             // !important
         },
         ["sql"] = new[]
         {
-            new StyleRule(new[] { 1, 2, 3 }, Comment),
-            new StyleRule(new[] { 4 }, Num),
-            new StyleRule(new[] { 5 }, Keyword, Bold: true),
-            new StyleRule(new[] { 6, 7 }, Str),
+            new StyleRule(new[] { 1, 2, 3 }, Tok.Comment),
+            new StyleRule(new[] { 4 }, Tok.Num),
+            new StyleRule(new[] { 5 }, Tok.Keyword, Bold: true),
+            new StyleRule(new[] { 6, 7 }, Tok.Str),
         },
         ["bash"] = new[]
         {
-            new StyleRule(new[] { 2 }, Comment),
-            new StyleRule(new[] { 3 }, Num),
-            new StyleRule(new[] { 4 }, Keyword, Bold: true),
-            new StyleRule(new[] { 5, 6, 12, 13 }, Str),
-            new StyleRule(new[] { 9, 10 }, Preproc),         // $var, ${param}
-            new StyleRule(new[] { 11 }, 0x811F3F),           // backticks
-            new StyleRule(new[] { 1 }, ErrCol),
+            new StyleRule(new[] { 2 }, Tok.Comment),
+            new StyleRule(new[] { 3 }, Tok.Num),
+            new StyleRule(new[] { 4 }, Tok.Keyword, Bold: true),
+            new StyleRule(new[] { 5, 6, 12, 13 }, Tok.Str),
+            new StyleRule(new[] { 9, 10 }, Tok.Preproc),      // $var, ${param}
+            new StyleRule(new[] { 11 }, Tok.Regex),           // backticks
+            new StyleRule(new[] { 1 }, Tok.Err),
         },
         ["powershell"] = new[]
         {
-            new StyleRule(new[] { 1, 13, 16 }, Comment),
-            new StyleRule(new[] { 2, 3, 14, 15 }, Str),
-            new StyleRule(new[] { 4 }, Num),
-            new StyleRule(new[] { 5 }, Preproc),             // $variable
-            new StyleRule(new[] { 8 }, Keyword, Bold: true),
-            new StyleRule(new[] { 9, 10, 11 }, TypeCol),     // cmdlet, alias, function
+            new StyleRule(new[] { 1, 13, 16 }, Tok.Comment),
+            new StyleRule(new[] { 2, 3, 14, 15 }, Tok.Str),
+            new StyleRule(new[] { 4 }, Tok.Num),
+            new StyleRule(new[] { 5 }, Tok.Preproc),          // $variable
+            new StyleRule(new[] { 8 }, Tok.Keyword, Bold: true),
+            new StyleRule(new[] { 9, 10, 11 }, Tok.Type),     // cmdlet, alias, function
         },
         ["markdown"] = new[]
         {
-            new StyleRule(new[] { 6, 7, 8, 9, 10, 11 }, Keyword, Bold: true), // headers
-            new StyleRule(new[] { 2, 3 }, 0x000000, Bold: true),
-            new StyleRule(new[] { 4, 5 }, 0x000000, Italic: true),
-            new StyleRule(new[] { 13, 14 }, Preproc),        // list markers
-            new StyleRule(new[] { 15 }, Comment),            // blockquote
-            new StyleRule(new[] { 18 }, 0x0451A5),           // link
-            new StyleRule(new[] { 19, 20, 21 }, Str),        // code
+            new StyleRule(new[] { 6, 7, 8, 9, 10, 11 }, Tok.Keyword, Bold: true), // headers
+            new StyleRule(new[] { 2, 3 }, Tok.Default, Bold: true),
+            new StyleRule(new[] { 4, 5 }, Tok.Default, Italic: true),
+            new StyleRule(new[] { 13, 14 }, Tok.Preproc),     // list markers
+            new StyleRule(new[] { 15 }, Tok.Comment),         // blockquote
+            new StyleRule(new[] { 18 }, Tok.Property),        // link
+            new StyleRule(new[] { 19, 20, 21 }, Tok.Str),     // code
         },
         ["batch"] = new[]
         {
-            new StyleRule(new[] { 1 }, Comment),
-            new StyleRule(new[] { 2 }, Keyword, Bold: true),
-            new StyleRule(new[] { 3 }, Preproc),             // :label
-            new StyleRule(new[] { 5 }, 0x0451A5),            // command
+            new StyleRule(new[] { 1 }, Tok.Comment),
+            new StyleRule(new[] { 2 }, Tok.Keyword, Bold: true),
+            new StyleRule(new[] { 3 }, Tok.Preproc),          // :label
+            new StyleRule(new[] { 5 }, Tok.Property),         // command
         },
         ["props"] = new[]
         {
-            new StyleRule(new[] { 1 }, Comment),
-            new StyleRule(new[] { 2 }, 0x800000, Bold: true), // [section]
-            new StyleRule(new[] { 5 }, 0x0451A5),             // key
-            new StyleRule(new[] { 4 }, Str),                  // value
+            new StyleRule(new[] { 1 }, Tok.Comment),
+            new StyleRule(new[] { 2 }, Tok.Tag, Bold: true),  // [section]
+            new StyleRule(new[] { 5 }, Tok.Property),         // key
+            new StyleRule(new[] { 4 }, Tok.Str),              // value
         },
         ["latex"] = new[]
         {
-            new StyleRule(new[] { 1, 9 }, Keyword),           // \commands
-            new StyleRule(new[] { 2, 5 }, TypeCol),           // {tags}
-            new StyleRule(new[] { 3, 6 }, 0x811F3F),          // math
-            new StyleRule(new[] { 4, 7 }, Comment),
-            new StyleRule(new[] { 8 }, Str),                  // verbatim
-            new StyleRule(new[] { 10 }, Preproc),
-            new StyleRule(new[] { 11 }, 0x808080),            // [options]
-            new StyleRule(new[] { 12 }, ErrCol),
+            new StyleRule(new[] { 1, 9 }, Tok.Keyword),       // \commands
+            new StyleRule(new[] { 2, 5 }, Tok.Type),          // {tags}
+            new StyleRule(new[] { 3, 6 }, Tok.Regex),         // math
+            new StyleRule(new[] { 4, 7 }, Tok.Comment),
+            new StyleRule(new[] { 8 }, Tok.Str),              // verbatim
+            new StyleRule(new[] { 10 }, Tok.Preproc),
+            new StyleRule(new[] { 11 }, Tok.Muted),           // [options]
+            new StyleRule(new[] { 12 }, Tok.Err),
         },
         ["makefile"] = new[]
         {
-            new StyleRule(new[] { 1 }, Comment),
-            new StyleRule(new[] { 2 }, Preproc),
-            new StyleRule(new[] { 3 }, 0x0451A5),
-            new StyleRule(new[] { 5 }, 0x800000, Bold: true), // target
-            new StyleRule(new[] { 9 }, ErrCol),
+            new StyleRule(new[] { 1 }, Tok.Comment),
+            new StyleRule(new[] { 2 }, Tok.Preproc),
+            new StyleRule(new[] { 3 }, Tok.Property),
+            new StyleRule(new[] { 5 }, Tok.Tag, Bold: true),  // target
+            new StyleRule(new[] { 9 }, Tok.Err),
         },
     };
 
@@ -256,8 +285,8 @@ static class Languages
         [".env"] = new("props", "Env"),
     };
 
-    /// <summary>Applies lexer, keywords, and colors for the given file. Returns a display name for the status bar.</summary>
-    public static string Apply(Scintilla editor, string? filePath)
+    /// <summary>Applies lexer, keywords, and theme colors for the given file. Returns a display name for the status bar.</summary>
+    public static string Apply(Scintilla editor, string? filePath, Theme theme)
     {
         Lang? lang = null;
         if (filePath != null)
@@ -279,9 +308,11 @@ static class Languages
 
         if (LexerStyles.TryGetValue(lang.Lexer, out var rules))
         {
+            var palette = theme.IsDark ? DarkPalette : LightPalette;
             foreach (var rule in rules)
             {
-                var color = Color.FromArgb((rule.Rgb >> 16) & 0xFF, (rule.Rgb >> 8) & 0xFF, rule.Rgb & 0xFF);
+                var rgb = palette[rule.Token];
+                var color = Color.FromArgb((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
                 foreach (var id in rule.Ids)
                 {
                     editor.Styles[id].ForeColor = color;
