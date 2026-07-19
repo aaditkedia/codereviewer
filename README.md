@@ -43,3 +43,5 @@ dotnet publish -c Release -o dist   # stable exe location the registry points at
 `register.ps1` adds codeviewer to the "Open with" dropdown for ~60 code/data extensions and makes it the double-click default for any extension no other app owns. Extensions already claimed by another app (Windows protects those with UserChoice) need a one-time right-click > Open with > codeviewer > Always. `unregister.ps1` undoes everything.
 
 Don't move or delete `dist\` after registering, the associations point at it.
+
+<!-- codeviewer -->
