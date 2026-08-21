@@ -8,13 +8,13 @@ Lightweight Windows code viewer/editor. WinForms + Scintilla (the same editing e
 
 Grab `codeviewer.exe` from [Releases](https://github.com/aaditkedia/codereviewer/releases): a single self-contained exe, no .NET install needed. Put it anywhere and run it.
 
-Or build from source (needs the .NET 10 SDK):
+Or build from source (needs the .NET 8 SDK):
 
 ```
 git clone https://github.com/aaditkedia/codereviewer.git
 cd codereviewer
 dotnet build -c Release
-bin\Release\net10.0-windows\codeviewer.exe [files or folders...]
+bin\Release\net8.0-windows\codeviewer.exe [files or folders...]
 ```
 
 ## Features
