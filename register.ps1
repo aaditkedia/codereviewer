@@ -17,14 +17,18 @@ $extensions = @(
     ".html", ".htm", ".css", ".scss", ".sql", ".sh", ".bash", ".zsh",
     ".ps1", ".psm1", ".psd1", ".md", ".markdown", ".bat", ".cmd",
     ".ini", ".env", ".properties", ".toml", ".editorconfig", ".gitignore", ".mk",
-    ".txt", ".log", ".csv"
+    ".txt", ".log", ".csv",
+    ".png", ".jpg", ".jpeg", ".jpe", ".jfif", ".gif", ".bmp", ".dib",
+    ".tif", ".tiff", ".ico", ".webp", ".avif", ".heic", ".heif", ".dds",
+    ".jxr", ".wdp", ".hdp", ".dng", ".cr2", ".cr3", ".nef", ".arw",
+    ".rw2", ".orf", ".raf"
 )
 
 $classes = "HKCU:\Software\Classes"
 
 # ProgID: what "open with codeviewer" means
 New-Item -Path "$classes\$progId\shell\open\command" -Force | Out-Null
-Set-ItemProperty -Path "$classes\$progId" -Name "(Default)" -Value "Code File"
+Set-ItemProperty -Path "$classes\$progId" -Name "(Default)" -Value "Code and Image File"
 New-Item -Path "$classes\$progId\DefaultIcon" -Force | Out-Null
 Set-ItemProperty -Path "$classes\$progId\DefaultIcon" -Name "(Default)" -Value "`"$exe`",0"
 Set-ItemProperty -Path "$classes\$progId\shell\open\command" -Name "(Default)" -Value "`"$exe`" `"%1`""
@@ -43,7 +47,7 @@ foreach ($ext in $extensions) {
 $capKey = "HKCU:\Software\codeviewer\Capabilities"
 New-Item -Path "$capKey\FileAssociations" -Force | Out-Null
 Set-ItemProperty -Path $capKey -Name "ApplicationName" -Value "codeviewer"
-Set-ItemProperty -Path $capKey -Name "ApplicationDescription" -Value "Lightweight code viewer and editor"
+Set-ItemProperty -Path $capKey -Name "ApplicationDescription" -Value "Lightweight code editor and image viewer"
 foreach ($ext in $extensions) {
     New-ItemProperty -Path "$capKey\FileAssociations" -Name $ext -Value $progId -PropertyType String -Force | Out-Null
 }
