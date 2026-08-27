@@ -6,7 +6,7 @@ Lightweight Windows code viewer/editor. WinForms + Scintilla (the same editing e
 
 ## Install
 
-### Download the Windows app
+### Windows
 
 1. Open the [latest GitHub release](https://github.com/aaditkedia/codereviewer/releases/latest).
 2. Under **Assets**, download `codeviewer.exe`.
@@ -16,6 +16,27 @@ Lightweight Windows code viewer/editor. WinForms + Scintilla (the same editing e
 codeviewer is currently unsigned, so Windows SmartScreen may show a warning on first launch. Confirm that the download came from this repository, select **More info**, then **Run anyway**.
 
 To make codeviewer the default for a file type, right-click a file, choose **Open with > Choose another app > Choose an app on your PC**, select `codeviewer.exe`, and enable **Always**. Because it is a portable app, keep the executable in the same location afterward.
+
+### macOS
+
+Download the archive for your Mac from the latest release:
+
+- Apple silicon (M1/M2/M3/M4/M5): `codeviewer-osx-arm64.zip`
+- Intel Mac: `codeviewer-osx-x64.zip`
+
+Unzip it, drag `codeviewer.app` into **Applications**, then Control-click the app and choose **Open** on first launch. The current macOS build is ad-hoc signed rather than Apple-notarized, so Gatekeeper may ask you to confirm it.
+
+### Linux
+
+Download `codeviewer-linux-x64.tar.gz` for most Intel/AMD computers or `codeviewer-linux-arm64.tar.gz` for an ARM64 computer. Then run:
+
+```sh
+tar -xzf codeviewer-linux-x64.tar.gz
+cd codeviewer-linux-x64
+./install.sh
+```
+
+The installer is per-user: it copies the app under `~/.local/share`, adds a launcher under `~/.local/bin`, and installs a desktop-menu entry. It does not need `sudo`. A modern graphical Linux distribution with X11 or XWayland is required.
 
 ### Build from source
 
@@ -44,6 +65,8 @@ bin\Release\net10.0-windows\codeviewer.exe [files or folders...]
 - Always-visible **Wrap text** toggle (or Alt+Z), plus Ctrl+scroll editor zoom
 - Keeps each text file's original encoding/BOM on save, warns on unknown binary files, and guards against excessively large files/images
 - Shortcuts: Ctrl+O open file, Ctrl+K open folder, Ctrl+S save, Ctrl+Shift+S save as, Ctrl+W close tab
+
+The Windows build retains its native WinForms/Scintilla implementation and Windows codec integration. macOS and Linux use the separate Avalonia/AvaloniaEdit implementation, preserving the core editor, folder sidebar, themes, wrapping, image tabs, Markdown preview/compile, LaTeX compilation, and Docker overview without changing the Windows binary.
 
 ## Register file associations from source
 

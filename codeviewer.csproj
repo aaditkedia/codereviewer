@@ -20,4 +20,12 @@
     <PackageReference Include="Markdig" Version="0.37.0" />
   </ItemGroup>
 
+  <!-- The Avalonia application is an independent sibling project. Keep the
+       root WinForms project's default globs from compiling its source/output. -->
+  <ItemGroup>
+    <Compile Remove="src\**\*.cs" />
+    <EmbeddedResource Remove="src\**\*" />
+    <None Remove="src\**\*" />
+  </ItemGroup>
+
 </Project>
