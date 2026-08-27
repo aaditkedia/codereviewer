@@ -2,4 +2,5 @@ bin/
 obj/
 dist/
 publish/
+artifacts/
 *.user

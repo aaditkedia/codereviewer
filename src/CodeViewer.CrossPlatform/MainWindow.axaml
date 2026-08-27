@@ -1,0 +1,61 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CodeViewer.CrossPlatform.MainWindow"
+        Title="codeviewer"
+        Width="1150" Height="740"
+        MinWidth="720" MinHeight="480"
+        WindowStartupLocation="CenterScreen">
+  <Grid RowDefinitions="Auto,Auto,*,Auto">
+    <Menu Grid.Row="0">
+      <MenuItem Header="_File">
+        <MenuItem x:Name="OpenFileItem" Header="Open _File…" HotKey="Ctrl+O" />
+        <MenuItem x:Name="OpenFolderItem" Header="Open Fol_der…" HotKey="Ctrl+K" />
+        <Separator />
+        <MenuItem x:Name="SaveItem" Header="_Save" HotKey="Ctrl+S" />
+        <MenuItem x:Name="SaveAsItem" Header="Save _As…" HotKey="Ctrl+Shift+S" />
+        <Separator />
+        <MenuItem x:Name="CloseTabItem" Header="_Close Tab" HotKey="Ctrl+W" />
+        <MenuItem x:Name="ExitItem" Header="E_xit" />
+      </MenuItem>
+      <MenuItem Header="_View">
+        <MenuItem x:Name="WrapMenuItem" Header="_Wrap text" ToggleType="CheckBox" HotKey="Alt+Z" />
+        <MenuItem x:Name="DarkMenuItem" Header="_Dark mode" ToggleType="CheckBox" />
+        <MenuItem x:Name="SidebarMenuItem" Header="Folder _sidebar" ToggleType="CheckBox" IsChecked="True" />
+        <Separator />
+        <MenuItem x:Name="MarkdownPreviewItem" Header="_Markdown preview" HotKey="Ctrl+Shift+V" />
+      </MenuItem>
+      <MenuItem Header="_Tools">
+        <MenuItem x:Name="CompileMarkdownItem" Header="Compile _Markdown" HotKey="F7" />
+        <MenuItem x:Name="CompileLatexItem" Header="Compile _LaTeX" HotKey="F6" />
+        <MenuItem x:Name="DockerItem" Header="_Docker overview" HotKey="Ctrl+Shift+D" />
+      </MenuItem>
+    </Menu>
+
+    <Border Grid.Row="1" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="0,0,0,1"
+            Padding="6,4">
+      <StackPanel Orientation="Horizontal" Spacing="6">
+        <ToggleButton x:Name="WrapButton" Content="Wrap text" ToolTip.Tip="Toggle word wrap (Alt+Z)" />
+        <ToggleButton x:Name="DarkButton" Content="Dark mode" ToolTip.Tip="Toggle dark mode" />
+      </StackPanel>
+    </Border>
+
+    <Grid x:Name="Workspace" Grid.Row="2" ColumnDefinitions="230,4,*">
+      <Border x:Name="Sidebar" Grid.Column="0"
+              Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+              BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="0,0,1,0">
+        <TreeView x:Name="FolderTree" Margin="4" />
+      </Border>
+      <GridSplitter Grid.Column="1" ResizeDirection="Columns" />
+      <TabControl x:Name="Tabs" Grid.Column="2" />
+    </Grid>
+
+    <Border Grid.Row="3" Background="#007ACC" Padding="8,3">
+      <Grid ColumnDefinitions="*,Auto,Auto">
+        <TextBlock x:Name="StatusPath" Text="Ready" Foreground="White" TextTrimming="CharacterEllipsis" />
+        <TextBlock x:Name="StatusLanguage" Grid.Column="1" Foreground="White" Margin="14,0" />
+        <TextBlock x:Name="StatusPosition" Grid.Column="2" Foreground="White" />
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

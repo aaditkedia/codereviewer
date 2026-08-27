@@ -9,10 +9,11 @@ namespace CodeViewer;
 
 public class MainForm : Form
 {
-    private const long OpenSizeLimit = 50 * 1024 * 1024; // refuse files above 50 MB
+    private const long TextOpenSizeLimit = 50 * 1024 * 1024;
+    private const long ImageOpenSizeLimit = 250 * 1024 * 1024;
 
     private static readonly MarkdownPipeline MdPipeline =
-        new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
+        new MarkdownPipelineBuilder().DisableHtml().UseAdvancedExtensions().Build();
 
     private readonly SplitContainer _split;
     private readonly TreeView _tree;
@@ -21,15 +22,19 @@ public class MainForm : Form
     private readonly ToolStripStatusLabel _statusPath;
     private readonly ToolStripStatusLabel _statusLang;
     private readonly ToolStripStatusLabel _statusPos;
+    private readonly ToolStrip _quickBar;
+    private readonly ToolStripButton _wordWrapButton;
+    private readonly ToolStripButton _darkModeButton;
     private readonly ToolStripMenuItem _wordWrapMenu;
     private readonly ToolStripMenuItem _sidebarMenu;
-    private readonly ToolStripMenuItem _lightModeMenu;
+    private readonly ToolStripMenuItem _darkModeMenu;
     private TabPage? _dockerPage;
     private Theme _theme = Theme.Load();
 
     private sealed class TabState
     {
-        public Scintilla Editor = null!;
+        public Scintilla? Editor;
+        public ImageViewer? ImageViewer;
         public string? FilePath;
         public string? HighlightPath;
         public bool IsDirty;
@@ -60,25 +65,19 @@ public class MainForm : Form
         fileMenu.DropDownItems.Add(MenuItem("E&xit", Keys.None, (_, _) => Close()));
 
         var viewMenu = new ToolStripMenuItem("&View");
-        _wordWrapMenu = new ToolStripMenuItem("&Word Wrap") { CheckOnClick = true };
-        _wordWrapMenu.Click += (_, _) =>
+        _wordWrapMenu = new ToolStripMenuItem("&Word Wrap")
         {
-            foreach (TabPage page in _tabs!.TabPages)
-                if (State(page) is { } s)
-                    s.Editor.WrapMode = _wordWrapMenu.Checked ? WrapMode.Word : WrapMode.None;
+            CheckOnClick = true,
+            ShortcutKeys = Keys.Alt | Keys.Z,
         };
+        _wordWrapMenu.Click += (_, _) => SetWordWrap(_wordWrapMenu.Checked);
         _sidebarMenu = new ToolStripMenuItem("Folder &Sidebar") { CheckOnClick = true, Checked = true };
         _sidebarMenu.Click += (_, _) => _split!.Panel1Collapsed = !_sidebarMenu.Checked;
-        _lightModeMenu = new ToolStripMenuItem("&Light Mode") { CheckOnClick = true, Checked = !_theme.IsDark };
-        _lightModeMenu.Click += (_, _) =>
-        {
-            _theme = _lightModeMenu.Checked ? Theme.Light : Theme.Dark;
-            Theme.Save(_theme);
-            ApplyTheme();
-        };
+        _darkModeMenu = new ToolStripMenuItem("&Dark Mode") { CheckOnClick = true, Checked = _theme.IsDark };
+        _darkModeMenu.Click += (_, _) => SetDarkMode(_darkModeMenu.Checked);
         viewMenu.DropDownItems.Add(_wordWrapMenu);
         viewMenu.DropDownItems.Add(_sidebarMenu);
-        viewMenu.DropDownItems.Add(_lightModeMenu);
+        viewMenu.DropDownItems.Add(_darkModeMenu);
         viewMenu.DropDownItems.Add(new ToolStripSeparator());
         viewMenu.DropDownItems.Add(MenuItem("&Markdown Preview", Keys.Control | Keys.Shift | Keys.V, (_, _) => ToggleMarkdownPreview()));
 
@@ -91,6 +90,31 @@ public class MainForm : Form
         menu.Items.Add(viewMenu);
         menu.Items.Add(toolsMenu);
         MainMenuStrip = menu;
+
+        // Always-visible, keyboard-accessible display controls.
+        _quickBar = new ToolStrip
+        {
+            Dock = DockStyle.Top,
+            GripStyle = ToolStripGripStyle.Hidden,
+            Padding = new Padding(4, 1, 4, 1),
+        };
+        _wordWrapButton = new ToolStripButton("Wrap text")
+        {
+            CheckOnClick = true,
+            Checked = _wordWrapMenu.Checked,
+            ToolTipText = "Toggle word wrap (Alt+Z)",
+            AccessibleName = "Toggle word wrap",
+        };
+        _darkModeButton = new ToolStripButton("Dark mode")
+        {
+            CheckOnClick = true,
+            Checked = _theme.IsDark,
+            ToolTipText = "Toggle dark mode",
+            AccessibleName = "Toggle dark mode",
+        };
+        _wordWrapButton.Click += (_, _) => SetWordWrap(_wordWrapButton.Checked);
+        _darkModeButton.Click += (_, _) => SetDarkMode(_darkModeButton.Checked);
+        _quickBar.Items.AddRange(new ToolStripItem[] { _wordWrapButton, _darkModeButton });
 
         // status bar
         _status = new StatusStrip { SizingGrip = false };
@@ -139,6 +163,7 @@ public class MainForm : Form
 
         Controls.Add(_split);
         Controls.Add(_status);
+        Controls.Add(_quickBar);
         Controls.Add(menu);
         _split.BringToFront();
 
@@ -171,6 +196,25 @@ public class MainForm : Form
 
     private static TabState? State(TabPage? page) => page?.Tag as TabState;
 
+    private void SetWordWrap(bool enabled)
+    {
+        _wordWrapMenu.Checked = enabled;
+        _wordWrapButton.Checked = enabled;
+        foreach (TabPage page in _tabs.TabPages)
+            if (State(page)?.Editor is { } editor)
+                editor.WrapMode = enabled ? WrapMode.Word : WrapMode.None;
+        _statusPath.Text = enabled ? "Word wrap on" : "Word wrap off";
+    }
+
+    private void SetDarkMode(bool enabled)
+    {
+        _darkModeMenu.Checked = enabled;
+        _darkModeButton.Checked = enabled;
+        _theme = enabled ? Theme.Dark : Theme.Light;
+        Theme.Save(_theme);
+        ApplyTheme();
+    }
+
     // ---------- opening ----------
 
     public void OpenFile(string path)
@@ -185,10 +229,17 @@ public class MainForm : Form
         }
 
         var info = new FileInfo(path);
-        if (info.Length > OpenSizeLimit)
+        bool isImage = IsImagePath(path);
+        long sizeLimit = isImage ? ImageOpenSizeLimit : TextOpenSizeLimit;
+        if (info.Length > sizeLimit)
         {
-            MessageBox.Show(this, $"File is {info.Length / (1024 * 1024)} MB - too large for codeviewer.", "codeviewer",
+            MessageBox.Show(this, $"File is {info.Length / (1024 * 1024)} MB; the limit for this file type is {sizeLimit / (1024 * 1024)} MB.", "codeviewer",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        if (isImage)
+        {
+            OpenImage(path);
             return;
         }
         if (LooksBinary(path) &&
@@ -212,6 +263,118 @@ public class MainForm : Form
 
         AddEditorTab(state, Path.GetFileName(path), text, path);
     }
+
+    private void OpenImage(string path)
+    {
+        Image image;
+        try
+        {
+            image = LoadImage(path);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, $"Could not open image:\n{ex.Message}", "codeviewer", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        var viewer = new ImageViewer(image);
+        viewer.ApplyTheme(_theme);
+        var state = new TabState
+        {
+            FilePath = path,
+            HighlightPath = path,
+            ImageViewer = viewer,
+            Language = $"{Path.GetExtension(path).TrimStart('.').ToUpperInvariant()} image",
+        };
+        var page = new TabPage(Path.GetFileName(path)) { Tag = state, ToolTipText = path };
+
+        var toolbar = new ToolStrip { Dock = DockStyle.Top, GripStyle = ToolStripGripStyle.Hidden, AutoSize = true };
+        var zoomLabel = new ToolStripLabel();
+        var zoomOut = new ToolStripButton("−") { ToolTipText = "Zoom out (-)" };
+        var fit = new ToolStripButton("Fit") { ToolTipText = "Fit image to window (F)" };
+        var actual = new ToolStripButton("100%") { ToolTipText = "Show actual size (0)" };
+        var zoomIn = new ToolStripButton("+") { ToolTipText = "Zoom in (+)" };
+        zoomOut.Click += (_, _) => viewer.ZoomOut();
+        fit.Click += (_, _) => viewer.Fit();
+        actual.Click += (_, _) => viewer.ActualSize();
+        zoomIn.Click += (_, _) => viewer.ZoomIn();
+        toolbar.Items.AddRange(new ToolStripItem[] { zoomOut, fit, actual, zoomIn, new ToolStripSeparator(), zoomLabel });
+
+        void RefreshImageStatus()
+        {
+            zoomLabel.Text = viewer.IsFitToWindow ? $"Fit ({viewer.ZoomPercent}%)" : $"{viewer.ZoomPercent}%";
+            if (_tabs.SelectedTab == page) UpdateStatus();
+        }
+        viewer.ViewChanged += (_, _) => RefreshImageStatus();
+
+        page.Controls.Add(viewer);
+        page.Controls.Add(toolbar);
+        _tabs.TabPages.Add(page);
+        _tabs.SelectedTab = page;
+        RefreshImageStatus();
+        viewer.Focus();
+    }
+
+    private static Image LoadImage(string path)
+    {
+        Exception? drawingError = null;
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var source = Image.FromStream(stream, useEmbeddedColorManagement: true, validateImageData: true);
+            ValidateImageDimensions(source.Width, source.Height);
+            return new Bitmap(source);
+        }
+        catch (Exception ex)
+        {
+            drawingError = ex;
+        }
+
+        // WIC extends support to any codec installed in Windows, including WebP,
+        // HEIF/HEIC, AVIF, camera RAW, JPEG XR, and DDS on configured systems.
+        try
+        {
+            var decoder = System.Windows.Media.Imaging.BitmapDecoder.Create(
+                new Uri(path),
+                System.Windows.Media.Imaging.BitmapCreateOptions.PreservePixelFormat,
+                System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
+            var frame = decoder.Frames[0];
+            ValidateImageDimensions(frame.PixelWidth, frame.PixelHeight);
+            var converted = new System.Windows.Media.Imaging.FormatConvertedBitmap(
+                frame, System.Windows.Media.PixelFormats.Pbgra32, null, 0);
+            var bitmap = new Bitmap(frame.PixelWidth, frame.PixelHeight,
+                System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+            var area = new Rectangle(0, 0, bitmap.Width, bitmap.Height);
+            var data = bitmap.LockBits(area, System.Drawing.Imaging.ImageLockMode.WriteOnly, bitmap.PixelFormat);
+            try
+            {
+                converted.CopyPixels(System.Windows.Int32Rect.Empty, data.Scan0, data.Stride * data.Height, data.Stride);
+            }
+            finally
+            {
+                bitmap.UnlockBits(data);
+            }
+            return bitmap;
+        }
+        catch (Exception codecError)
+        {
+            throw new InvalidDataException(
+                "This image format is corrupt or is not supported by an installed Windows image codec. " +
+                $"{codecError.Message}", drawingError);
+        }
+    }
+
+    private static void ValidateImageDimensions(int width, int height)
+    {
+        if (width <= 0 || height <= 0 || (long)width * height > 100_000_000)
+            throw new InvalidDataException($"Image dimensions ({width} x {height}) are too large to display safely.");
+    }
+
+    private static bool IsImagePath(string path) => Path.GetExtension(path).ToLowerInvariant() is
+        ".png" or ".jpg" or ".jpeg" or ".jpe" or ".jfif" or ".gif" or ".bmp" or ".dib" or
+        ".tif" or ".tiff" or ".ico" or ".webp" or ".avif" or ".heic" or ".heif" or
+        ".dds" or ".jxr" or ".wdp" or ".hdp" or ".dng" or ".cr2" or ".cr3" or
+        ".nef" or ".arw" or ".rw2" or ".orf" or ".raf";
 
     /// <summary>Opens generated content (docker logs, latex output) in a new editor tab.</summary>
     public void OpenTextTab(string title, string content, string? fakeNameForHighlighting)
@@ -361,7 +524,7 @@ public class MainForm : Form
     {
         var page = _tabs.SelectedTab;
         if (page == null || State(page) is not { } state) return;
-        if (!state.Language.StartsWith("Markdown", StringComparison.OrdinalIgnoreCase))
+        if (state.Editor == null || !state.Language.StartsWith("Markdown", StringComparison.OrdinalIgnoreCase))
         {
             _statusPath.Text = "Markdown preview only works on .md files";
             return;
@@ -386,12 +549,12 @@ public class MainForm : Form
         };
         browser.Navigating += (_, e) =>
         {
-            // open real links externally, keep preview rendering internal
-            if (e.Url != null && (e.Url.Scheme == "http" || e.Url.Scheme == "https"))
-            {
-                e.Cancel = true;
+            if (e.Url == null || e.Url.Scheme == "about") return;
+            // Never navigate the embedded legacy browser away from its generated
+            // document. Only ordinary web links may be handed to the OS browser.
+            e.Cancel = true;
+            if (e.Url.Scheme == "http" || e.Url.Scheme == "https")
                 try { Process.Start(new ProcessStartInfo(e.Url.ToString()) { UseShellExecute = true }); } catch { }
-            }
         };
         state.Preview = browser;
         split.Panel2.Controls.Add(browser);
@@ -407,7 +570,8 @@ public class MainForm : Form
     {
         if (state.Preview == null) return;
 
-        state.Preview.DocumentText = BuildMarkdownHtmlDocument(state.Editor.Text, state.FilePath, _theme.IsDark);
+        if (state.Editor != null)
+            state.Preview.DocumentText = BuildMarkdownHtmlDocument(state.Editor.Text, state.FilePath, _theme.IsDark);
     }
 
     private static string BuildMarkdownHtmlDocument(string markdown, string? title, bool dark)
@@ -443,7 +607,7 @@ public class MainForm : Form
     {
         var page = _tabs.SelectedTab;
         if (page == null || State(page) is not { } state || state.FilePath == null ||
-            !state.Language.StartsWith("Markdown", StringComparison.OrdinalIgnoreCase))
+            state.Editor == null || !state.Language.StartsWith("Markdown", StringComparison.OrdinalIgnoreCase))
         {
             _statusPath.Text = "Compile Markdown needs a saved .md file in the active tab";
             return;
@@ -472,7 +636,7 @@ public class MainForm : Form
     {
         var page = _tabs.SelectedTab;
         if (page == null || State(page) is not { } state || state.FilePath == null ||
-            !Path.GetExtension(state.FilePath).Equals(".tex", StringComparison.OrdinalIgnoreCase))
+            state.Editor == null || !Path.GetExtension(state.FilePath).Equals(".tex", StringComparison.OrdinalIgnoreCase))
         {
             _statusPath.Text = "Compile LaTeX needs a saved .tex file in the active tab";
             return;
@@ -557,6 +721,11 @@ public class MainForm : Form
     private bool SaveTab(TabPage page)
     {
         if (State(page) is not { } state) return false;
+        if (state.Editor == null)
+        {
+            _statusPath.Text = "Image tabs are read-only";
+            return false;
+        }
         if (state.FilePath == null) return SaveTabAs(page);
 
         try
@@ -576,6 +745,11 @@ public class MainForm : Form
     private bool SaveTabAs(TabPage page)
     {
         if (State(page) is not { } state) return false;
+        if (state.Editor == null)
+        {
+            _statusPath.Text = "Image tabs are read-only";
+            return false;
+        }
         using var dlg = new SaveFileDialog
         {
             FileName = Path.GetFileName(state.FilePath ?? "untitled.txt"),
@@ -680,7 +854,12 @@ public class MainForm : Form
         }
         _statusPath.Text = state.FilePath ?? page.Text;
         _statusLang.Text = state.Language;
-        UpdatePosition(state.Editor);
+        if (state.ImageViewer is { Image: { } image } viewer)
+            _statusPos.Text = $"{image.Width} x {image.Height} px · {viewer.ZoomPercent}%";
+        else if (state.Editor is { } editor)
+            UpdatePosition(editor);
+        else
+            _statusPos.Text = "";
     }
 
     private void UpdatePosition(Scintilla editor)
@@ -706,7 +885,11 @@ public class MainForm : Form
 
     private void OpenFileDialogAction()
     {
-        using var dlg = new OpenFileDialog { Multiselect = true, Filter = "All files (*.*)|*.*" };
+        using var dlg = new OpenFileDialog
+        {
+            Multiselect = true,
+            Filter = "Supported images|*.png;*.jpg;*.jpeg;*.jpe;*.jfif;*.gif;*.bmp;*.dib;*.tif;*.tiff;*.ico;*.webp;*.avif;*.heic;*.heif;*.dds;*.jxr;*.wdp;*.hdp;*.dng;*.cr2;*.cr3;*.nef;*.arw;*.rw2;*.orf;*.raf|All files (*.*)|*.*",
+        };
         if (dlg.ShowDialog(this) == DialogResult.OK)
             foreach (var file in dlg.FileNames)
                 OpenFile(file);
@@ -726,6 +909,8 @@ public class MainForm : Form
         BackColor = _theme.PanelBack;
         ToolStripManager.Renderer = new ThemeRenderer(new ThemeColorTable(_theme), _theme);
         if (MainMenuStrip != null) MainMenuStrip.BackColor = _theme.MenuBack;
+        _quickBar.BackColor = _theme.MenuBack;
+        _quickBar.ForeColor = _theme.MenuFore;
         // explicit colors: the professional renderer skips its gradient once BackColor
         // is non-default, and the ambient form BackColor already makes it non-default
         _status.BackColor = _theme.StatusBack;
@@ -743,10 +928,17 @@ public class MainForm : Form
         {
             if (State(page) is { } state)
             {
-                if (page.Controls.Count > 0 && page.Controls[0] is SplitContainer tabSplit)
-                    tabSplit.BackColor = _theme.EditorBack;
-                state.Language = ApplyEditorTheme(state.Editor, state.HighlightPath);
-                RenderMarkdown(state);
+                if (state.Editor is { } editor)
+                {
+                    if (page.Controls.Count > 0 && page.Controls[0] is SplitContainer tabSplit)
+                        tabSplit.BackColor = _theme.EditorBack;
+                    state.Language = ApplyEditorTheme(editor, state.HighlightPath);
+                    RenderMarkdown(state);
+                }
+                else if (state.ImageViewer is { } imageViewer)
+                {
+                    imageViewer.ApplyTheme(_theme);
+                }
             }
             else if (page == _dockerPage && page.Controls.Count > 0 && page.Controls[0] is DockerPanel dockerPanel)
             {
@@ -831,8 +1023,8 @@ public class MainForm : Form
         if (_tree.IsHandleCreated) ApplyDarkScrollbars(_tree.Handle, _theme.IsDark);
         foreach (TabPage page in _tabs.TabPages)
         {
-            if (State(page) is { } s && s.Editor.IsHandleCreated)
-                ApplyDarkScrollbars(s.Editor.Handle, _theme.IsDark);
+            if (State(page)?.Editor is { IsHandleCreated: true } editor)
+                ApplyDarkScrollbars(editor.Handle, _theme.IsDark);
             else if (page == _dockerPage && page.Controls.Count > 0 && page.Controls[0] is DockerPanel dockerPanel)
                 dockerPanel.ApplyNativeTheme(_theme.IsDark);
         }

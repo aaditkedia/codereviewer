@@ -8,7 +8,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,10 +18,103 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Publish self-contained single exe
-        run: dotnet publish codeviewer.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o publish
+        run: dotnet publish codeviewer.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o publish/windows
 
-      - name: Create release with exe
+      - name: Upload Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: publish/windows/codeviewer.exe
+          if-no-files-found: error
+
+  linux:
+    strategy:
+      matrix:
+        rid: [linux-x64, linux-arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish ${{ matrix.rid }}
+        run: >-
+          dotnet publish src/CodeViewer.CrossPlatform/CodeViewer.CrossPlatform.csproj
+          -c Release -r ${{ matrix.rid }} --self-contained
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true -o publish/${{ matrix.rid }}
+
+      - name: Package ${{ matrix.rid }}
+        shell: bash
+        run: |
+          bundle="codeviewer-${{ matrix.rid }}"
+          mkdir -p "package/$bundle"
+          cp "publish/${{ matrix.rid }}/codeviewer" "package/$bundle/codeviewer"
+          cp packaging/linux/install.sh "package/$bundle/install.sh"
+          cp packaging/linux/io.github.aaditkedia.codeviewer.desktop "package/$bundle/"
+          chmod +x "package/$bundle/codeviewer" "package/$bundle/install.sh"
+          tar -czf "package/$bundle.tar.gz" -C package "$bundle"
+
+      - name: Upload ${{ matrix.rid }} archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.rid }}
+          path: package/codeviewer-${{ matrix.rid }}.tar.gz
+          if-no-files-found: error
+
+  macos:
+    strategy:
+      matrix:
+        rid: [osx-x64, osx-arm64]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish ${{ matrix.rid }}
+        run: >-
+          dotnet publish src/CodeViewer.CrossPlatform/CodeViewer.CrossPlatform.csproj
+          -c Release -r ${{ matrix.rid }} --self-contained
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true -o publish/${{ matrix.rid }}
+
+      - name: Create macOS app bundle
+        shell: bash
+        run: |
+          app="package/codeviewer.app"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          cp "publish/${{ matrix.rid }}/codeviewer" "$app/Contents/MacOS/codeviewer"
+          cp packaging/macos/Info.plist "$app/Contents/Info.plist"
+          chmod +x "$app/Contents/MacOS/codeviewer"
+          codesign --force --deep --sign - "$app"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "package/codeviewer-${{ matrix.rid }}.zip"
+
+      - name: Upload ${{ matrix.rid }} app
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.rid }}
+          path: package/codeviewer-${{ matrix.rid }}.zip
+          if-no-files-found: error
+
+  release:
+    needs: [windows, linux, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: assets
+          merge-multiple: true
+
+      - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: publish/codeviewer.exe
+          files: assets/*
+          fail_on_unmatched_files: true
           generate_release_notes: true

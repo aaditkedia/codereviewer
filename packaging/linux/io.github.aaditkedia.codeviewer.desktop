@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=codeviewer
+Comment=Lightweight code editor and image viewer
+Exec=@EXECUTABLE@ %F
+Terminal=false
+Categories=Development;TextEditor;Utility;
+MimeType=text/plain;application/json;application/xml;text/markdown;image/png;image/jpeg;image/gif;image/webp;image/tiff;
+StartupNotify=true
