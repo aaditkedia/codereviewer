@@ -20,7 +20,7 @@ bin\Release\net10.0-windows\codeviewer.exe [files or folders...]
 ## Features
 
 - Syntax coloring: TS/JS/JSX, Python, Java, C#, C/C++, Go, Rust, PHP, Kotlin, SQL, HTML/CSS, JSON, YAML, XML, Markdown, LaTeX/BibTeX, shell/bash, PowerShell, Dockerfile, Terraform, batch, ini/env/toml, Makefile, proto
-- **Dark mode by default** with VS Code Dark+-style syntax colors; View > Light Mode toggles the light theme. Choice persists across runs (`%APPDATA%\codeviewer\settings.txt`).
+- **Dark mode by default** with VS Code Dark+-style syntax colors. The always-visible **Dark mode** toolbar button toggles it, and the choice persists across runs (`%APPDATA%\codeviewer\settings.txt`).
 - **Markdown preview**: View > Markdown Preview (Ctrl+Shift+V) renders the file side by side, live as you type. `codeviewer --preview notes.md` opens with the preview already on.
 - **Image viewing**: PNG, JPEG, GIF, BMP, TIFF, ICO, WebP, AVIF, HEIC/HEIF, DDS, JPEG XR, and major camera RAW files open in image tabs. Modern and RAW formats use installed Windows codecs. Use the toolbar or mouse wheel to zoom, drag to pan, and double-click to switch between fit-to-window and actual size.
 - **Markdown compile**: Tools > Compile Markdown (F7) saves the active `.md` file, writes a clean standalone `.html` file next to it, and opens it in your browser.
@@ -30,7 +30,7 @@ bin\Release\net10.0-windows\codeviewer.exe [files or folders...]
 - Folder sidebar (File > Open Folder or drop a folder on the window), skips node_modules/.git/bin/obj
 - Drag & drop files or folders onto the window
 - Indentation guides, auto-indent on Enter (extra level after `{` or `:`), line numbers, current-line highlight
-- Word wrap toggle (View menu), Ctrl+scroll zoom
+- Always-visible **Wrap text** toggle (or Alt+Z), plus Ctrl+scroll editor zoom
 - Keeps each text file's original encoding/BOM on save, warns on unknown binary files, and guards against excessively large files/images
 - Shortcuts: Ctrl+O open file, Ctrl+K open folder, Ctrl+S save, Ctrl+Shift+S save as, Ctrl+W close tab
 
@@ -44,5 +44,9 @@ dotnet publish -c Release -o dist   # stable exe location the registry points at
 `register.ps1` adds codeviewer to the "Open with" dropdown for ~60 code/data extensions and makes it the double-click default for any extension no other app owns. Extensions already claimed by another app (Windows protects those with UserChoice) need a one-time right-click > Open with > codeviewer > Always. `unregister.ps1` undoes everything.
 
 Don't move or delete `dist\` after registering, the associations point at it.
+
+## Privacy and security
+
+codeviewer has no accounts, telemetry, analytics, cloud backend, or bundled credentials. Editing, Markdown/LaTeX compilation, and Docker commands run locally. A Markdown document can still reference remote images, and clicking an `http` or `https` link opens it in your default browser. Raw HTML is disabled in Markdown rendering, and the embedded preview blocks navigation to local files and non-web URL schemes.
 
 <!-- codeviewer -->
