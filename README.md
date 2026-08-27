@@ -4,11 +4,22 @@ Lightweight Windows code viewer/editor. WinForms + Scintilla (the same editing e
 
 ~13 MB private memory / ~55 MB working set with several tabs open. 4.4 MB on disk (framework-dependent build).
 
-## Install on another PC
+## Install
 
-Grab `codeviewer.exe` from [Releases](https://github.com/aaditkedia/codereviewer/releases): a single self-contained exe, no .NET install needed. Put it anywhere and run it.
+### Download the Windows app
 
-Or build from source (needs the .NET 10 SDK):
+1. Open the [latest GitHub release](https://github.com/aaditkedia/codereviewer/releases/latest).
+2. Under **Assets**, download `codeviewer.exe`.
+3. Move it to a permanent folder such as `%LOCALAPPDATA%\Programs\codeviewer\`.
+4. Double-click it to run. No installer, administrator access, or separate .NET installation is required.
+
+codeviewer is currently unsigned, so Windows SmartScreen may show a warning on first launch. Confirm that the download came from this repository, select **More info**, then **Run anyway**.
+
+To make codeviewer the default for a file type, right-click a file, choose **Open with > Choose another app > Choose an app on your PC**, select `codeviewer.exe`, and enable **Always**. Because it is a portable app, keep the executable in the same location afterward.
+
+### Build from source
+
+Install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), then run:
 
 ```
 git clone https://github.com/aaditkedia/codereviewer.git
@@ -34,14 +45,14 @@ bin\Release\net10.0-windows\codeviewer.exe [files or folders...]
 - Keeps each text file's original encoding/BOM on save, warns on unknown binary files, and guards against excessively large files/images
 - Shortcuts: Ctrl+O open file, Ctrl+K open folder, Ctrl+S save, Ctrl+Shift+S save as, Ctrl+W close tab
 
-## File associations (Open with / default app)
+## Register file associations from source
 
 ```
 dotnet publish -c Release -o dist   # stable exe location the registry points at
 .\register.ps1                      # HKCU only, no admin
 ```
 
-`register.ps1` adds codeviewer to the "Open with" dropdown for ~60 code/data extensions and makes it the double-click default for any extension no other app owns. Extensions already claimed by another app (Windows protects those with UserChoice) need a one-time right-click > Open with > codeviewer > Always. `unregister.ps1` undoes everything.
+`register.ps1` adds codeviewer to the "Open with" dropdown for 88 code, data, and image extensions and makes it the double-click default for any extension no other app owns. Extensions already claimed by another app (Windows protects those with UserChoice) need a one-time right-click > Open with > codeviewer > Always. `unregister.ps1` undoes everything.
 
 Don't move or delete `dist\` after registering, the associations point at it.
 
