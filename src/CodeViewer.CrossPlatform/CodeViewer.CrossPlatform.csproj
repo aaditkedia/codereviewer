@@ -12,6 +12,11 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
 
+  <!-- The LaTeX toolchain lookup and multi-pass driver are shared with the WinForms build. -->
+  <ItemGroup>
+    <Compile Include="..\..\LatexToolchain.cs" Link="LatexToolchain.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.1" />
     <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />

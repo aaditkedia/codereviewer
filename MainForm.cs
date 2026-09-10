@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
+using CodeViewer.Latex;
 using Markdig;
 using ScintillaNET;
 
@@ -643,52 +644,39 @@ public class MainForm : Form
         }
         if (state.IsDirty && !SaveTab(page)) return;
 
-        var dir = Path.GetDirectoryName(state.FilePath)!;
         var file = Path.GetFileName(state.FilePath);
-        string[] compilers = { "pdflatex", "xelatex", "tectonic" };
-        Exception? lastError = null;
+        var progress = new Progress<string>(text => _statusPath.Text = text);
 
-        foreach (var compiler in compilers)
+        LatexCompileOutcome outcome;
+        try
         {
-            var args = compiler == "tectonic" ? $"\"{file}\"" : $"-interaction=nonstopmode -halt-on-error \"{file}\"";
-            ProcessStartInfo psi = new(compiler, args)
-            {
-                WorkingDirectory = dir,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true,
-            };
-
-            Process proc;
-            try { proc = Process.Start(psi)!; }
-            catch (Exception ex) { lastError = ex; continue; } // compiler not installed, try next
-
-            _statusPath.Text = $"Compiling {file} with {compiler}...";
-            var stdout = proc.StandardOutput.ReadToEndAsync();
-            var stderr = proc.StandardError.ReadToEndAsync();
-            var done = await Task.Run(() => proc.WaitForExit(120000));
-            if (!done) { try { proc.Kill(true); } catch { } _statusPath.Text = "LaTeX compile timed out"; return; }
-
-            var output = await stdout + await stderr;
-            if (proc.ExitCode == 0)
-            {
-                var pdf = Path.Combine(dir, Path.ChangeExtension(file, ".pdf"));
-                _statusPath.Text = $"Compiled OK -> {pdf}";
-                if (File.Exists(pdf))
-                    try { Process.Start(new ProcessStartInfo(pdf) { UseShellExecute = true }); } catch { }
-            }
-            else
-            {
-                _statusPath.Text = $"{compiler} failed (exit {proc.ExitCode}) - output opened in tab";
-                OpenTextTab($"latex output: {file}", output, null);
-            }
+            outcome = await LatexToolchain.CompileAsync(state.FilePath, progress);
+        }
+        catch (Exception ex)
+        {
+            _statusPath.Text = "LaTeX compile failed";
+            MessageBox.Show(this, $"Could not compile LaTeX:\n{ex.Message}", "codeviewer",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 
-        MessageBox.Show(this,
-            "No LaTeX compiler found on PATH (tried pdflatex, xelatex, tectonic).\nInstall MiKTeX (miktex.org) or TeX Live.\n\n" + lastError?.Message,
-            "codeviewer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        _statusPath.Text = outcome.StatusLine;
+
+        switch (outcome.Status)
+        {
+            case LatexCompileStatus.Succeeded:
+                if (outcome.PdfPath != null)
+                    try { Process.Start(new ProcessStartInfo(outcome.PdfPath) { UseShellExecute = true }); } catch { }
+                break;
+
+            case LatexCompileStatus.NoToolchain:
+                MessageBox.Show(this, outcome.Message, "codeviewer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                break;
+
+            default:
+                OpenTextTab($"latex output: {file}", outcome.Message + "\n\n" + outcome.Output, null);
+                break;
+        }
     }
 
     // ---------- docker ----------
