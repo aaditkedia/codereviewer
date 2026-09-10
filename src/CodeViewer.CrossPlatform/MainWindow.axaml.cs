@@ -13,6 +13,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using AvaloniaEdit;
 using AvaloniaEdit.TextMate;
+using CodeViewer.Latex;
 using Markdig;
 using TextMateSharp.Grammars;
 
@@ -590,27 +591,37 @@ public sealed partial class MainWindow : Window
         }
         if (state.IsDirty && !await SaveTabAsync(tab)) return;
 
-        var directory = Path.GetDirectoryName(state.FilePath)!;
         var file = Path.GetFileName(state.FilePath);
-        foreach (var compiler in new[] { "pdflatex", "xelatex", "tectonic" })
+        var progress = new Progress<string>(text => StatusPath.Text = text);
+
+        LatexCompileOutcome outcome;
+        try
         {
-            var args = compiler == "tectonic" ? new[] { file } : new[] { "-interaction=nonstopmode", "-halt-on-error", file };
-            var result = await RunProcessAsync(compiler, args, directory, 120_000);
-            if (result.Missing) continue;
-            if (result.ExitCode == 0)
-            {
-                var pdf = Path.Combine(directory, Path.ChangeExtension(file, ".pdf"));
-                if (File.Exists(pdf)) OpenExternally(pdf);
-                StatusPath.Text = $"Compiled LaTeX → {pdf}";
-            }
-            else
-            {
-                OpenGeneratedTextTab($"LaTeX output: {file}", result.Output, null);
-                StatusPath.Text = $"{compiler} failed (exit {result.ExitCode})";
-            }
+            outcome = await LatexToolchain.CompileAsync(state.FilePath, progress);
+        }
+        catch (Exception ex)
+        {
+            StatusPath.Text = "LaTeX compile failed";
+            await ShowMessageAsync("LaTeX compile failed", ex.Message);
             return;
         }
-        await ShowMessageAsync("No LaTeX compiler found", "Install pdflatex, xelatex, or tectonic and ensure it is available on PATH.");
+
+        StatusPath.Text = outcome.StatusLine;
+
+        switch (outcome.Status)
+        {
+            case LatexCompileStatus.Succeeded:
+                if (outcome.PdfPath != null) OpenExternally(outcome.PdfPath);
+                break;
+
+            case LatexCompileStatus.NoToolchain:
+                await ShowMessageAsync("No LaTeX compiler found", outcome.Message);
+                break;
+
+            default:
+                OpenGeneratedTextTab($"LaTeX output: {file}", outcome.Message + "\n\n" + outcome.Output, null);
+                break;
+        }
     }
 
     private async Task ShowDockerAsync()
@@ -811,7 +822,13 @@ public sealed partial class MainWindow : Window
             }
             var output = await stdout;
             var error = await stderr;
-            return (process.ExitCode, output.Length > 0 ? output : error, false);
+            var combined = (output.Length, error.Length) switch
+            {
+                (0, _) => error,
+                (_, 0) => output,
+                _ => output.TrimEnd() + "\n" + error,
+            };
+            return (process.ExitCode, combined, false);
         }
         catch (Exception ex) when (ex is FileNotFoundException or System.ComponentModel.Win32Exception)
         {
